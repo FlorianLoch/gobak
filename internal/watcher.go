@@ -1,12 +1,26 @@
 package internal
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/radovskyb/watcher"
+
+	"github.com/florianloch/gobak/internal/config"
 )
+
+var opsMapping = map[string]watcher.Op{
+	"create": watcher.Create,
+	"write":  watcher.Write,
+	"remove": watcher.Remove,
+	"rename": watcher.Rename,
+	"chmod":  watcher.Chmod,
+	"move":   watcher.Move,
+}
 
 type NotifyFn func(item *WorksetItem)
 
@@ -15,13 +29,53 @@ type PollWatcher struct {
 	watcher  *watcher.Watcher
 }
 
-func NewPollWatcher(interval time.Duration) *PollWatcher {
-	// TODO: set appropriate filters
+func NewPollWatcher(config *config.Config) (*PollWatcher, error) {
+	re, err := regexp.Compile(config.ExlcudePattern)
+	if err != nil {
+		return nil, err
+	}
+
+	w := watcher.New()
+
+	w.AddFilterHook(excludeFile(re))
+
+	ops, err := parseOps(config.MonitoredOperations)
+	if err != nil {
+		return nil, err
+	}
+
+	w.FilterOps(ops...)
 
 	return &PollWatcher{
-		interval: interval,
-		watcher:  watcher.New(),
+		interval: config.Interval,
+		watcher:  w,
+	}, nil
+}
+
+func excludeFile(re *regexp.Regexp) watcher.FilterFileHookFunc {
+	return func(info os.FileInfo, fullPath string) error {
+		if re.MatchString(fullPath) {
+			return watcher.ErrSkip
+		}
+
+		return nil
 	}
+}
+
+func parseOps(opsAsStrings []string) ([]watcher.Op, error) {
+	var ops []watcher.Op
+
+	for _, opStr := range opsAsStrings {
+		if val, found := opsMapping[strings.ToLower(opStr)]; found {
+			ops = append(ops, val)
+
+			continue
+		}
+
+		return nil, fmt.Errorf("unsupported operation: '%s'", opStr)
+	}
+
+	return ops, nil
 }
 
 func (p *PollWatcher) StartWatching(notifyFn NotifyFn) error {

@@ -6,6 +6,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/florianloch/gobak/internal/config"
 )
@@ -29,4 +31,6 @@ func main() {
 
 		os.Exit(1)
 	}
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 }
