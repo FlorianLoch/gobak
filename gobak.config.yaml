@@ -1,2 +1,4 @@
-source: "source dir"
-target: "target dir"
+source: "/Users/floch/Desktop/priv/gobak/test/source"
+target: "/Users/floch/Desktop/priv/gobak/test/target"
+interval: 2s
+monitored_operations: CREATE, WRITE, MOVE, REMOVE

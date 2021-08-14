@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/florianloch/gobak/internal"
 	"github.com/florianloch/gobak/internal/config"
 )
 
@@ -33,4 +34,21 @@ func main() {
 	}
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	cfg := &cli.Config
+
+	watcher, err := internal.NewPollWatcher(cfg)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to initialize PollWatcher")
+	}
+
+	if err := watcher.AddRecursively(cfg.Source); err != nil {
+		log.Error().Err(err).Str("source_directory", cfg.Source).Msg("Failed to add source directory to watcher.")
+	}
+
+	copier := internal.NewCopier(cfg.Source, cfg.Target)
+
+	gobak := internal.NewGobak(watcher, copier)
+
+	gobak.Run()
 }

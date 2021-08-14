@@ -5,13 +5,36 @@ import (
 	"sync"
 )
 
+type Operation uint32
+
+const (
+	Create Operation = iota
+	Write
+	Remove
+	Rename
+	Chmod
+	Move
+)
+
+var opsToStrMapping = []string{"CREATE", "WRITE", "REMOVE", "RENAME", "CHMOD", "MOVE"}
+
+func (o Operation) String() string {
+	if o > 0 && int(o) < len(opsToStrMapping) {
+		return opsToStrMapping[o]
+	}
+
+	return "UNKNOWN"
+}
+
 type WorksetItem struct {
-	path string
-	info os.FileInfo
+	path      string
+	oldPath   string
+	operation Operation
+	info      os.FileInfo
 }
 
 type Workset struct {
-	mu sync.Mutex
+	mu  sync.Mutex
 	buf chan *WorksetItem
 	set map[*WorksetItem]struct{}
 }

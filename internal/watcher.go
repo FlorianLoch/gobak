@@ -2,13 +2,13 @@ package internal
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/radovskyb/watcher"
+	"github.com/rs/zerolog/log"
 
 	"github.com/florianloch/gobak/internal/config"
 )
@@ -30,7 +30,7 @@ type PollWatcher struct {
 }
 
 func NewPollWatcher(config *config.Config) (*PollWatcher, error) {
-	re, err := regexp.Compile(config.ExlcudePattern)
+	re, err := regexp.Compile(config.ExcludePattern)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +44,8 @@ func NewPollWatcher(config *config.Config) (*PollWatcher, error) {
 		return nil, err
 	}
 
+	log.Info().Strs("operations", config.MonitoredOperations).Msg("Going to monitor the following operations:")
+
 	w.FilterOps(ops...)
 
 	return &PollWatcher{
@@ -53,6 +55,13 @@ func NewPollWatcher(config *config.Config) (*PollWatcher, error) {
 }
 
 func excludeFile(re *regexp.Regexp) watcher.FilterFileHookFunc {
+	// Empty regex allows all files, so we return a dummy FilterFileHookFunc
+	if re.String() == "" {
+		return func(info os.FileInfo, fullPath string) error {
+			return nil
+		}
+	}
+
 	return func(info os.FileInfo, fullPath string) error {
 		if re.MatchString(fullPath) {
 			return watcher.ErrSkip
@@ -83,13 +92,20 @@ func (p *PollWatcher) StartWatching(notifyFn NotifyFn) error {
 		for {
 			select {
 			case event := <-p.watcher.Event:
+				// We do not want to be notified in case of directory changes as we do only care for files
+				if event.IsDir() {
+					continue
+				}
+
 				notifyFn(&WorksetItem{
-					path: event.Path,
-					info: event.FileInfo,
+					path:      event.Path,
+					oldPath:   event.OldPath,
+					operation: Operation(event.Op),
+					info:      event.FileInfo,
 				})
 			case err := <-p.watcher.Error:
 				// TODO: add proper logging
-				log.Fatalln(err)
+				panic(err)
 			case <-p.watcher.Closed:
 				// TODO: add logging
 				return

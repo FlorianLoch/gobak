@@ -1,10 +1,16 @@
 package internal
 
-const WorksetBufferSize = 1E5
+import (
+	"time"
+
+	"github.com/rs/zerolog/log"
+)
+
+const WorksetBufferSize = 1e5
 
 type Gobak struct {
 	watcher *PollWatcher
-	copier *Copier
+	copier  *Copier
 }
 
 func NewGobak(watcher *PollWatcher, copier *Copier) *Gobak {
@@ -18,29 +24,97 @@ func (g *Gobak) Run() {
 	// First, make sure all currently existing files are back-upped
 	sourceFilesMap := g.watcher.WatchedFiles()
 
-	// TODO: log amount of files
+	var copiedCounter, errCounter, fileCounter, dirCounter int
 
-	for k,v := range sourceFilesMap {
-		if err := g.copier.Copy(k, v); err != nil {
-			// TODO: log error
+	for k, v := range sourceFilesMap {
+		if v.IsDir() {
+			dirCounter++
+
+			// We do not copy directories, it is easier to just copy the files and ensure that the containing
+			// folders (and their parents) exist. This would be necessary anyways because the map is not sorted in any
+			// way, so we are not guaranteed to handle directories before files.
+			continue
 		}
+
+		if copied, _, err := g.copier.Copy(k, v); err != nil {
+			log.Error().Err(err).Str("path", k).Str("name", v.Name()).Msg("Failed to copy file.")
+			errCounter++
+		} else if copied {
+			copiedCounter++
+		}
+
+		fileCounter++
 	}
+
+	log.Info().Msgf("Going to watch %d files in %d directories.", fileCounter, dirCounter)
+
+	log.Info().
+		Int("copied", copiedCounter).
+		Int("errors", errCounter).
+		Int("already_present", fileCounter-copiedCounter).
+		Msg("Done with initial mirroring.")
 
 	// Second, watch files for changes
 	workset := NewWorkset(WorksetBufferSize)
 
 	go func() {
+		// TODO: Allow graceful shutdown
 		for item := range workset.C() {
-			if err := g.copier.Copy(item.path, item.info); err != nil {
-				// TODO: log error
+			// TODO: Unify logs by attaching the fields to a dedicated logger
 
-				continue
+			log := log.With().
+				Str("path", item.path).
+				Str("name", item.info.Name()).
+				Stringer("op", item.operation).
+				Logger()
+
+			start := time.Now()
+
+			switch item.operation {
+			case Remove:
+				// TODO Only log these cases
+
+			case Rename:
+				log.With().Str("oldPath", item.oldPath).Logger()
+
+				if err := g.copier.Rename(item.oldPath, item.path); err != nil {
+					log.Error().Err(err).Msg("Failed to rename file.")
+				} else {
+					log.Info().Msg("File renamed.")
+				}
+
+			case Chmod:
+				// Noop, we do not consider this
+
+			case Move:
+				log.With().Str("oldPath", item.oldPath).Logger()
+
+				if moved, bytesMoved, err := g.copier.Move(item.oldPath, item.path, item.info); err != nil {
+					log.Error().Err(err).Msg("Failed to move file.")
+				} else if !moved {
+					log.Error().Msg("File already present, therefore neither copied nor removed. Though it had been scheduled by the watcher.")
+				} else {
+					log.Info().
+						Dur("duration", time.Since(start)).
+						Int("bytes_copied", bytesMoved).
+						Msg("File moved.")
+				}
+
+			default: // Write, Create
+				if copied, bytesCopied, err := g.copier.Copy(item.path, item.info); err != nil {
+					log.Error().Err(err).Msg("Failed to copy file.")
+
+					continue
+				} else if !copied {
+					log.Error().Msg("File already present, therefore not copied. Though it had been scheduled by the watcher.")
+				} else {
+					log.Info().
+						Dur("duration", time.Since(start)).
+						Int("bytes_copied", bytesCopied).
+						Msg("File copied.")
+				}
 			}
-
-			// TODO: log file successfully copied, also log size and time required
 		}
-
-		// TODO: log that copy loop has been shut down
 	}()
 
 	g.watcher.StartWatching(workset.Put)
