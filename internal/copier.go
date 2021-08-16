@@ -1,6 +1,12 @@
 package internal
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+)
 
 type Copier struct {
 	source string
@@ -8,9 +14,11 @@ type Copier struct {
 }
 
 func NewCopier(source, target string) *Copier {
+	// TODO: Check whether source and target exist
+
 	return &Copier{
-		source: source,
-		target: target,
+		source: filepath.Clean(source),
+		target: filepath.Clean(target),
 	}
 }
 
@@ -31,5 +39,28 @@ func (c *Copier) Move(oldPath, newPath string, info os.FileInfo) (bool, int, err
 }
 
 func (c *Copier) Rename(oldPath, newPath string) error {
+	oldPath, err := c.resolveToSourcePath(oldPath)
 
+	newPath, err := c.resolveToSourcePath(newPath)
+	if err != nil {
+		return err
+	}
+
+
+}
+
+func (c *Copier) resolveToSourcePath(p string) (string, error) {
+	p = filepath.Clean(p)
+
+	// Is p a file located somewhere in source?
+	if !strings.HasPrefix(p, c.source) {
+		return "", fmt.Errorf("file not below source directory")
+	}
+
+	relPathToSource, err := filepath.Rel(c.source, oath)
+	if err != nil {
+		return "", err
+	}
+
+	return path.Join(c.target, relPathToSource), nil
 }

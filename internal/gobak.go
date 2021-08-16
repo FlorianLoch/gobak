@@ -60,7 +60,6 @@ func (g *Gobak) Run() {
 	go func() {
 		// TODO: Allow graceful shutdown
 		for item := range workset.C() {
-			// TODO: Unify logs by attaching the fields to a dedicated logger
 
 			log := log.With().
 				Str("path", item.path).
@@ -72,9 +71,12 @@ func (g *Gobak) Run() {
 
 			switch item.operation {
 			case Remove:
-				// TODO Only log these cases
+				// TODO: Think about having an additional mechanism like suffixing deleted files or mainting a list of
+				// deleted files in order to clean up at some point.
+				log.Warn().Msg("Original image has been deleted.")
 
 			case Rename:
+				// TODO: Investigate on what's the difference between Rename and Move operation
 				log.With().Str("oldPath", item.oldPath).Logger()
 
 				if err := g.copier.Rename(item.oldPath, item.path); err != nil {
