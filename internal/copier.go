@@ -49,6 +49,25 @@ func (c *Copier) Rename(oldPath, newPath string) error {
 
 }
 
+
+func (c *Copier) isMoreRecent(sourceFile, targetFile string) (bool, error) {
+	sourceFI, err := os.Stat(sourceFile)
+	if err != nil {
+		return false, fmt.Errorf("could not stat source file: %w", err)
+	}
+
+	targetFI, err := os.Stat(targetFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("could not stat target file: %w", err)
+	}
+
+	return sourceFI.ModTime().After(targetFI.ModTime()), nil
+}
+
 func (c *Copier) resolveToSourcePath(p string) (string, error) {
 	p = filepath.Clean(p)
 
@@ -57,7 +76,7 @@ func (c *Copier) resolveToSourcePath(p string) (string, error) {
 		return "", fmt.Errorf("file not below source directory")
 	}
 
-	relPathToSource, err := filepath.Rel(c.source, oath)
+	relPathToSource, err := filepath.Rel(c.source, p)
 	if err != nil {
 		return "", err
 	}
